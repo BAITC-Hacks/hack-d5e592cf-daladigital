@@ -11,14 +11,21 @@ from unittest.mock import patch
 os.environ["PROTOCOL_DATA_DIR"] = tempfile.mkdtemp(prefix="protocol-test-")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from app import exports, inference, service, store  # noqa: E402
+from app import auth, exports, inference, service, store  # noqa: E402
 from app.main import app  # noqa: E402
 
 
 class ProtocolTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.client = TestClient(app)
+        cls.client = TestClient(app).__enter__()
+        auth.create_initial_admin("testadmin", "Тестовый администратор", "test-password-123")
+        response = cls.client.post("/api/auth/login", json={"username": "testadmin", "password": "test-password-123"})
+        cls.client.headers["X-CSRF-Token"] = response.json()["csrf"]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.client.__exit__(None, None, None)
 
     def test_date_normalization(self) -> None:
         self.assertEqual(inference._normalize_due("к 15 октября", "2026-09-23"), "2026-10-15")
@@ -37,7 +44,8 @@ class ProtocolTests(unittest.TestCase):
 
     def test_url_validation_and_recording_lifecycle(self) -> None:
         base = {"title": "Тестовое совещание", "meeting_date": "2026-09-23", "participants": "А, Б",
-                "source": "platform", "provider": "meet", "consent_confirmed": True}
+                "source": "platform", "provider": "meet", "consent_confirmed": True,
+                "notice_version": self.client.get("/api/recording-notice").json()["version"]}
         rejected = self.client.post("/api/meetings/live", json={**base, "meeting_url": "https://evil.example/a"})
         self.assertEqual(rejected.status_code, 422)
         created = self.client.post("/api/meetings/live", json={**base, "meeting_url": "https://meet.google.com/abc-defg-hij"})
@@ -67,6 +75,15 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(draft.status_code, 200)
         self.assertTrue(draft.content.startswith(b"%PDF"))
         self.assertIn('attachment; filename="draft-protocol-', draft.headers["content-disposition"])
+        store.update_meeting(m['id'], summary='Коротко')
+        premature = self.client.post(f"/api/meetings/{m['id']}/approve", json={"actor": "Секретарь", "confirmed": True})
+        self.assertEqual(premature.status_code, 409)
+        summary = ("На совещании поручено подготовить план к 15 октября. "
+                   "Ответственный должен подтвердить содержание и срок; секретарь сверил поручение "
+                   "с исходной репликой перед утверждением протокола.")
+        updated = self.client.patch(f"/api/meetings/{m['id']}/summary",
+            json={"actor": "Секретарь", "summary": summary})
+        self.assertEqual(updated.status_code, 200)
         approved = self.client.post(f"/api/meetings/{m['id']}/approve", json={"actor": "Секретарь", "confirmed": True})
         self.assertEqual(approved.status_code, 200)
         docx = self.client.get(f"/api/meetings/{m['id']}/export?format=docx")

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "reference": "meeting_1",
+  "evaluated_at_utc": "2026-09-23T12:04:43.663696+00:00",
+  "source_result_updated_at": "2026-09-23T11:44:06.638848+00:00",
+  "source_state": "review",
+  "source_result_sha256": "97ae7fd5783ba24383ab16673ffdb1b7da8d69bd7c7e156e59e0ae5c19d8125e",
+  "method": "Existing stored model result; no audio or inference rerun. Lexical screening against organizer reference, not semantic accuracy, WER or DER.",
+  "privacy": "No meeting IDs, names, transcript, task text, paths, or audio are included.",
+  "audit_event_counts": {
+    "created": 1,
+    "extraction_refined": 1,
+    "processing_failed": 1,
+    "thematic_summary_created": 1
+  },
+  "metrics": {
+    "expected_actions": 10,
+    "detected_actions": 9,
+    "matched_actions": 6,
+    "action_recall": 0.6,
+    "action_precision_screen": 0.667,
+    "expected_speakers": 5,
+    "detected_speakers": 5,
+    "transcript_turns": 33
+  },
+  "matching": [
+    {
+      "gold_id": "M1-01",
+      "action_match_confidence": 0.859,
+      "assignee_ok": true,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M1-02",
+      "action_match_confidence": 0.868,
+      "assignee_ok": true,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M1-03",
+      "action_match_confidence": 0.573,
+      "assignee_ok": false,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M1-04",
+      "action_match_confidence": 0.858,
+      "assignee_ok": false,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M1-05",
+      "action_match_confidence": 0.851,
+      "assignee_ok": true,
+      "deadline_ok": false,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M1-08",
+      "action_match_confidence": 0.851,
+      "assignee_ok": false,
+      "deadline_ok": false,
+      "source_ids_present": true
+    }
+  ],
+  "unmatched_reference_ids": [
+    "M1-06",
+    "M1-07",
+    "M1-09",
+    "M1-10"
+  ],
+  "additional_actions_for_review_count": 3,
+  "missing_speaker_name_count": 1,
+  "non_speaker_incorrectly_named_count": 0,
+  "missing_summary_fact_count": 1,
+  "reference_summary_fact_count": 5,
+  "summary_topic_count": 3,
+  "requires_manual_review": true
+}

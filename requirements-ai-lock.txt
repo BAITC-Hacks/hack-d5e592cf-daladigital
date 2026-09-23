@@ -1,0 +1,3 @@
+# Resolve declared dependencies against the observed working environment.
+-c requirements-lock.txt
+-r requirements-ai.txt

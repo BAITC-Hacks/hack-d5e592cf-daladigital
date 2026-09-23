@@ -40,7 +40,7 @@ if [[ ! -x "$protocol_runtime/bin/python" ]]; then
   "$protocol_python" -m venv "$protocol_runtime"
 fi
 printf 'Установка зависимостей: %s\n' "$protocol_runtime"
-"$protocol_runtime/bin/python" -m pip install -r requirements-ai.txt
+"$protocol_runtime/bin/python" -m pip install -r requirements-ai-lock.txt
 "$protocol_runtime/bin/python" -m app.prepare_models
 if ! ollama pull "${PROTOCOL_OLLAMA_MODEL:-qwen3:4b}"; then
   printf 'Не удалось подготовить модель анализа. Запустите приложение Ollama или ollama serve в другом терминале, затем повторите bash scripts/setup.sh.\n' >&2

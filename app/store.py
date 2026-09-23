@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import sqlite3
 import threading
 import uuid
@@ -14,7 +16,7 @@ from typing import Any
 from .config import DATA_DIR
 
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 DB_PATH = DATA_DIR / "protocols.sqlite3"
 _LOCK = threading.RLock()
 
@@ -147,13 +149,16 @@ def update_meeting(meeting_id: str, **changes: Any) -> dict[str, Any]:
 
 
 def edit_item(meeting_id: str, item_id: str, changes: dict[str, Any], actor: str) -> dict[str, Any]:
-    allowed = {"title", "description", "owner", "due_text", "due_date", "status", "review_note"}
+    allowed = {"title", "description", "owner", "due_text", "due_date", "status", "review_note",
+               "reminder_recipient", "reminder_channel"}
     if set(changes) - allowed:
         raise ValueError("Unsupported item field")
     with _LOCK:
         meeting = get_meeting(meeting_id)
-        if meeting["state"] == "approved" and set(changes) != {"status"}:
-            raise ValueError("В утверждённом протоколе можно изменить только статус исполнения")
+        if meeting["state"] in {"queued", "processing", "recording"}:
+            raise ValueError("Дождитесь завершения обработки")
+        if meeting["state"] == "approved" and set(changes) - {"status", "reminder_recipient", "reminder_channel"}:
+            raise ValueError("После утверждения можно менять только статус и настройки напоминаний")
         found = next((item for item in meeting["items"] if item["id"] == item_id), None)
         if found is None:
             raise KeyError(item_id)
@@ -191,6 +196,38 @@ def edit_speaker(meeting_id: str, speaker_id: str, name: str, actor: str) -> dic
         update_meeting(meeting_id, speakers=meeting["speakers"])
         audit(meeting_id, actor, "speaker_named", {"speaker_id": speaker_id, "before": before, "after": name})
         return meeting["speakers"]
+
+
+def delete_meeting(meeting_id: str, actor: str) -> None:
+    """Remove one finished meeting and its media; never follow a stored arbitrary path."""
+    if not re.fullmatch(r"[a-f0-9]{32}", meeting_id):
+        raise ValueError("Некорректный идентификатор совещания")
+    with _LOCK:
+        meeting = get_meeting(meeting_id)
+        if meeting["state"] in {"recording", "queued", "processing"}:
+            raise ValueError("Нельзя удалить запись во время записи или обработки")
+        directory = DATA_DIR / meeting_id
+        if directory.is_symlink() or Path(meeting["media_path"]).parent.resolve() != directory.resolve():
+            raise ValueError("Расположение записи требует проверки администратором")
+        quarantine = DATA_DIR / (".delete-" + meeting_id + "-" + uuid.uuid4().hex)
+        moved = directory.exists()
+        if moved:
+            directory.rename(quarantine)
+        try:
+            with _connect() as connection:
+                connection.execute("PRAGMA secure_delete=ON")
+                connection.execute("DELETE FROM audit_events WHERE meeting_id=?", (meeting_id,))
+                # Reminder table has ON DELETE CASCADE. Keep a content-free deletion receipt.
+                connection.execute("CREATE TABLE IF NOT EXISTS deletion_events "
+                                   "(meeting_id TEXT, actor TEXT, created_at TEXT)")
+                connection.execute("INSERT INTO deletion_events VALUES(?,?,?)", (meeting_id, actor, now()))
+                connection.execute("DELETE FROM meetings WHERE id=?", (meeting_id,))
+        except Exception:
+            if moved:
+                quarantine.rename(directory)
+            raise
+        if moved:
+            shutil.rmtree(quarantine)
 
 
 init_db()

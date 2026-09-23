@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "reference": "meeting_2",
+  "evaluated_at_utc": "2026-09-23T12:04:43.708289+00:00",
+  "source_result_updated_at": "2026-09-23T11:43:37.519605+00:00",
+  "source_state": "review",
+  "source_result_sha256": "7c12ae406f29f86a58c27f399df6a2afc6f1a5bf533225e6d7ff33296b52829b",
+  "method": "Existing stored model result; no audio or inference rerun. Lexical screening against organizer reference, not semantic accuracy, WER or DER.",
+  "privacy": "No meeting IDs, names, transcript, task text, paths, or audio are included.",
+  "audit_event_counts": {
+    "created": 1,
+    "processing_completed": 1,
+    "processing_failed": 1,
+    "thematic_summary_created": 1
+  },
+  "metrics": {
+    "expected_actions": 6,
+    "detected_actions": 6,
+    "matched_actions": 5,
+    "action_recall": 0.833,
+    "action_precision_screen": 0.833,
+    "expected_speakers": 5,
+    "detected_speakers": 3,
+    "transcript_turns": 20
+  },
+  "matching": [
+    {
+      "gold_id": "M2-01",
+      "action_match_confidence": 0.894,
+      "assignee_ok": true,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M2-02",
+      "action_match_confidence": 0.624,
+      "assignee_ok": false,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M2-03",
+      "action_match_confidence": 0.898,
+      "assignee_ok": false,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M2-05",
+      "action_match_confidence": 0.865,
+      "assignee_ok": false,
+      "deadline_ok": true,
+      "source_ids_present": true
+    },
+    {
+      "gold_id": "M2-06",
+      "action_match_confidence": 0.621,
+      "assignee_ok": true,
+      "deadline_ok": true,
+      "source_ids_present": true
+    }
+  ],
+  "unmatched_reference_ids": [
+    "M2-04"
+  ],
+  "additional_actions_for_review_count": 1,
+  "missing_speaker_name_count": 5,
+  "non_speaker_incorrectly_named_count": 0,
+  "missing_summary_fact_count": 3,
+  "reference_summary_fact_count": 5,
+  "summary_topic_count": 4,
+  "requires_manual_review": true
+}

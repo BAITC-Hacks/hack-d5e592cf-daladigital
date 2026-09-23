@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from . import inference, store
+from . import inference, reminders, store
 
 
 LOGGER = logging.getLogger(__name__)
@@ -106,14 +106,21 @@ def approve(meeting_id: str, actor: str) -> dict[str, Any]:
     if not meeting["summary"] or len(meeting["summary"]) < 100:
         raise ValueError("Саммари пустое или слишком краткое; проверьте его перед утверждением")
     store.audit(meeting_id, actor, "approved", {"items": len(meeting["items"])})
-    return store.update_meeting(meeting_id, state="approved", stage="Утверждён",
-                                approved_at=store.now())
+    result = store.update_meeting(meeting_id, state="approved", stage="Утверждён",
+                                  approved_at=store.now())
+    # Persist approval first. The periodic worker can recover notification
+    # delivery after a crash between approval and this immediate check.
+    try:
+        reminders.run_once()
+    except Exception:
+        LOGGER.exception("Immediate notifications failed for %s; the reminder worker will retry", meeting_id)
+    return result
 
 
 def dashboard() -> dict[str, Any]:
     from datetime import date, timedelta
 
-    today = date.today()
+    today = reminders.local_today()
     actions = []
     for meeting in store.list_meetings():
         if meeting["state"] != "approved":
