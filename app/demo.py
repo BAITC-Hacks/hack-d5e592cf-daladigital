@@ -1,13 +1,15 @@
 """Explicit, repeatable local fixtures; importing the module never seeds accounts.
 
-Run ``python -m app.demo --seed`` after first-run administrator setup. These
-hand-authored examples exercise review and notifications, not speech recognition.
+The demo launcher prepares an isolated demo-data directory without administrator
+setup. Other archives require an existing administrator. These hand-authored
+examples exercise review and notifications, not speech recognition.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import sys
 import uuid
@@ -81,7 +83,10 @@ def seed_demo() -> dict[str, Any]:
     A profile or meeting-ID collision aborts the entire seed before data changes.
     """
     from . import auth, reminders, store
+    from .config import APP_HOME
 
+    isolated_demo = (os.getenv("PROTOCOL_DEMO_MODE") == "1"
+                     and store.DATA_DIR == (APP_HOME / "demo-data").resolve())
     auth.init_db()
     reminders.init_db()
     today = reminders.local_today()
@@ -90,7 +95,7 @@ def seed_demo() -> dict[str, Any]:
     created_meetings: list[str] = []
     with store._LOCK, store._connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        if not connection.execute("SELECT 1 FROM auth_users WHERE role='admin' LIMIT 1").fetchone():
+        if not isolated_demo and not connection.execute("SELECT 1 FROM auth_users WHERE role='admin' LIMIT 1").fetchone():
             raise ValueError("Сначала создайте администратора через экран первоначальной настройки приложения.")
         existing_users = {}
         for profile in PROFILES:

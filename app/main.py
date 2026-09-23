@@ -30,6 +30,10 @@ STATIC = Path(__file__).with_name("static")
 async def lifespan(_app: FastAPI):
     auth.init_db()
     reminders.init_db()
+    if os.getenv("PROTOCOL_DEMO_MODE") == "1":
+        from .demo import seed_demo
+        seed_demo()
+        reminders.run_once()
     scheduler = reminders.ReminderScheduler()
     scheduler.start()
     try:
@@ -117,7 +121,7 @@ def auth_status(request: Request) -> dict:
     local = request.client and request.client.host in {"127.0.0.1", "::1", "testclient"}
     profiles = auth.demo_users() if local else []
     return {"configured": auth.is_configured(), "demo": bool(profiles), "demo_users": profiles,
-            "demo_default": "d.omarov" if profiles else None}
+            "demo_default": "a.saparova" if profiles else None}
 
 
 class DemoLogin(BaseModel):

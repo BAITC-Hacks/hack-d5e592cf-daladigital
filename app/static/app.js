@@ -5,7 +5,7 @@ const state = {view:'overview', source:'upload', provider:'meet', meetings:[], c
   uploadChain:Promise.resolve(), uploadError:null, recordingId:null, gaps:[], silentSince:null, lastSignal:0,
   starting:false, stopPromise:null, recorderStopped:null, localChunks:[], recordingMeta:null, recordingUrl:null, captureClosed:false,
   user:null,csrf:null,users:[],notifications:[],inboxPoll:null,sessionVersion:0,inboxFilter:'all',notificationRequest:0,
-  notice:null,noticePromise:null,noticeAcknowledgedVersion:null,demo:false,demoUsers:[],demoDefault:'d.omarov',demoLoginBusy:false};
+  notice:null,noticePromise:null,noticeAcknowledgedVersion:null,demo:false,demoUsers:[],demoDefault:'a.saparova',demoLoginBusy:false};
 const labels = {recording:'Идёт запись',queued:'В очереди',processing:'Обработка',review:'Нужна проверка',approved:'Утверждён',error:'Ошибка'};
 const kinds = {action:'Поручение',decision:'Решение',initiative:'Инициатива',question:'Открытый вопрос',risk:'Риск'};
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -345,7 +345,7 @@ async function acceptSession(session){
 async function bootstrapAuth(){
   try{
     const status=await api('/api/auth/status');
-    state.demo=status.demo===true;state.demoUsers=Array.isArray(status.demo_users)?status.demo_users:[];state.demoDefault=status.demo_default||'d.omarov';
+    state.demo=status.demo===true;state.demoUsers=Array.isArray(status.demo_users)?status.demo_users:[];state.demoDefault=status.demo_default||'a.saparova';
     if(state.demo){
       const chosen=sessionStorage.getItem('protocol-demo-persona');
       const target=state.demoUsers.some(user=>user.username===chosen)?chosen:state.demoDefault;

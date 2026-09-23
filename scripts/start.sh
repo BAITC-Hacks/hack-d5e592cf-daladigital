@@ -12,6 +12,11 @@ else
   protocol_app_home="${XDG_DATA_HOME:-$HOME/.local/share}/ai-protokolist"
 fi
 export PROTOCOL_HOME="$protocol_app_home"
+# The standard launch is a self-contained demo; authenticated deployments opt out.
+export PROTOCOL_DEMO_MODE="${PROTOCOL_DEMO_MODE:-1}"
+if [[ "$PROTOCOL_DEMO_MODE" == "1" ]]; then
+  printf 'Демонстрация без регистрации. Роли переключаются в боковом меню.\n'
+fi
 protocol_python="$protocol_app_home/runtime/bin/python"
 
 if [[ ! -x "$protocol_python" ]]; then
