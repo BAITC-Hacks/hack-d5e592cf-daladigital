@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import importlib.util
 import re
 import shutil
 from datetime import date
@@ -17,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import exports, service, store
+from .config import MODEL_DIR
+from .model_files import ASR_BYTES, SPEAKER_BYTES, available
 
 
 MAX_MEDIA_BYTES = int(os.getenv("PROTOCOL_MAX_MEDIA_BYTES", str(500 * 1024 * 1024)))
@@ -115,22 +118,11 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict:
-    from .inference import MODEL_DIR
-
-    try:
-        import faster_whisper  # noqa: F401
-        asr_package = True
-    except ImportError:
-        asr_package = False
-    try:
-        import diarize  # noqa: F401
-        diarize_package = True
-    except ImportError:
-        diarize_package = False
     return {"status": "ok", "offline_runtime": True, "ffmpeg": shutil.which("ffmpeg") is not None,
-            "asr_package": asr_package, "asr_model": (MODEL_DIR / "whisper-large-v3-turbo").exists(),
-            "diarize_package": diarize_package,
-            "diarize_model": (MODEL_DIR / "wespeaker" / "model.onnx").exists(),
+            "asr_package": importlib.util.find_spec("faster_whisper") is not None,
+            "asr_model": available(MODEL_DIR / "whisper-large-v3-turbo" / "model.bin", ASR_BYTES),
+            "diarize_package": importlib.util.find_spec("diarize") is not None,
+            "diarize_model": available(MODEL_DIR / "wespeaker" / "model.onnx", SPEAKER_BYTES),
             "ollama_executable": shutil.which("ollama") is not None,
             "ollama_model": os.getenv("PROTOCOL_OLLAMA_MODEL", "qwen3:4b")}
 

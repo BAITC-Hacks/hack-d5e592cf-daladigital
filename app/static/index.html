@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Протоколист · Самрук-Қазына</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232187bc'/%3E%3Ctext x='32' y='46' text-anchor='middle' font-family='Arial' font-weight='bold' font-size='44' fill='white'%3ES%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -38,7 +39,7 @@
         <label class="checkbox"><input id="consent" type="checkbox"><span>Я уведомил участников о записи и обработке речи и получил необходимое согласие.</span></label>
         <div class="form-actions"><span class="muted small">Видео не сохраняется. Протокол требует проверки секретарём.</span><button id="submit-meeting" class="button primary" type="submit">Начать обработку →</button></div>
       </form>
-      <div id="recorder" class="recorder" hidden><div class="recorder-top"><div><p class="eyebrow">ПРОВЕРКА ЗВУКА / ЗАПИСЬ</p><h2 id="record-title">Запись совещания</h2><p id="record-status">Ожидание звука…</p></div><div id="record-timer" class="timer">00:00</div></div><div class="meter"><div id="meter-fill"></div></div><p id="record-note" class="small muted">Индикатор «Звук поступает» появится только при обнаружении реального сигнала.</p><button id="begin-recording" class="button primary" disabled>Начать запись</button> <button id="stop-recording" class="button danger" hidden>Остановить и обработать</button></div>
+      <div id="recorder" class="recorder" hidden><div class="recorder-top"><div><p class="eyebrow">ПРОВЕРКА ЗВУКА / ЗАПИСЬ</p><h2 id="record-title">Запись совещания</h2><p id="record-status" role="status">Ожидание звука…</p></div><div id="record-timer" class="timer">00:00</div></div><div class="meter"><div id="meter-fill"></div></div><p id="record-note" class="small muted">Индикатор «Звук поступает» появится только при обнаружении реального сигнала.</p><div class="record-actions"><button id="begin-recording" class="button primary" disabled>Начать запись</button><button id="stop-recording" class="button danger" hidden>Остановить и обработать</button><button id="cancel-capture" class="button secondary">Отмена</button><a id="download-recording" class="button secondary" hidden download="meeting.webm">Скачать сохранённый звук ↓</a></div></div>
     </section>
     <section id="meetings" class="view" hidden><p class="eyebrow blue">АРХИВ</p><h1 class="page-heading">Протоколы совещаний</h1><p class="subtitle">Черновики проверяются человеком перед экспортом.</p><div id="all-list" class="list-card"></div></section>
     <section id="dashboard" class="view" hidden><p class="eyebrow blue">ИСПОЛНЕНИЕ</p><h1 class="page-heading">Контроль поручений</h1><p class="subtitle">Данные из утверждённых протоколов. Напоминания и рассылка пока не автоматизированы.</p><div id="stats" class="stats"></div><div id="action-list" class="list-card"></div></section>

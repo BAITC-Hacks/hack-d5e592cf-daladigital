@@ -11,7 +11,7 @@ from unittest.mock import patch
 os.environ["PROTOCOL_DATA_DIR"] = tempfile.mkdtemp(prefix="protocol-test-")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from app import inference, store  # noqa: E402
+from app import inference, service, store  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -57,7 +57,8 @@ class ProtocolTests(unittest.TestCase):
         Path(m["media_path"]).write_bytes(b"0" * 2000)
         store.update_meeting(m["id"], state="review", segments=[{"id": "1", "start": 0.0,
             "end": 2.0, "speaker_id": "S1", "text": "Подготовьте план к 15 октября"}], speakers={"S1": "Председатель"},
-            summary="Подготовка плана")
+            summary="Обсуждена подготовка плана работы. Председатель поручил подготовить план к 15 октября. "
+                    "Секретарь сверил формулировку поручения и срок с исходной записью; документ готов к утверждению.")
         item = self.client.post(f"/api/meetings/{m['id']}/items", json={"actor": "Секретарь",
             "kind": "action", "title": "Подготовить план", "owner": "Гульмира",
             "due_text": "15 октября", "due_date": "2026-10-15", "source_segment_ids": ["1"]})
@@ -73,6 +74,22 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(pdf.content.startswith(b"%PDF"))
         self.assertEqual(self.client.patch(f"/api/meetings/{m['id']}/items/{item.json()['id']}",
             json={"actor": "Секретарь", "changes": {"title": "Другая суть"}}).status_code, 409)
+
+    def test_retry_resumes_existing_transcript_and_preserves_names(self) -> None:
+        meeting = store.create_meeting(title="Повтор анализа", meeting_date="2026-09-23", source="upload",
+                                       provider=None, participants=["Гульмира"], suffix=".wav")
+        segments = [{"id": "1", "start": 0.0, "end": 2.0, "speaker_id": "S1", "text": "План готов"}]
+        store.update_meeting(meeting["id"], state="error", error="Модель анализа недоступна",
+                             segments=segments, speakers={"S1": "Гульмира"})
+        before = len(store.list_meetings())
+        with patch("app.service._WORKER.submit") as submit:
+            response = self.client.post(f"/api/meetings/{meeting['id']}/retry")
+        self.assertEqual(response.status_code, 200)
+        submit.assert_called_once_with(service._analyze_revision, meeting["id"])
+        self.assertEqual(response.json()["speakers"], {"S1": "Гульмира"})
+        self.assertEqual(response.json()["segments"], segments)
+        self.assertIsNone(response.json()["error"])
+        self.assertEqual(len(store.list_meetings()), before)
 
 
 if __name__ == "__main__":

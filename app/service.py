@@ -23,7 +23,8 @@ def process(meeting_id: str) -> None:
         store.update_meeting(meeting_id, state="processing", stage="Подготовка аудио", error=None)
         inference.normalize_audio(source, wav)
         store.update_meeting(meeting_id, stage="Распознавание речи")
-        words = inference.transcribe(wav)
+        words = inference.transcribe(wav, on_progress=lambda percent: store.update_meeting(
+            meeting_id, stage=f"Распознавание речи · {percent}% аудио"))
         store.update_meeting(meeting_id, stage="Различение говорящих")
         spans = inference.diarize_audio(wav, len(meeting["participants"]) or None)
         segments = inference.align_words(words, spans)
@@ -47,11 +48,14 @@ def enqueue(meeting_id: str) -> dict[str, Any]:
     meeting = store.get_meeting(meeting_id)
     if meeting["state"] not in {"queued", "recording", "error"}:
         raise ValueError("Это совещание уже обрабатывается или утверждено")
-    media = Path(meeting["media_path"])
-    if not media.exists() or media.stat().st_size < 1000:
-        raise ValueError("Запись пуста или ещё не сохранена")
-    store.update_meeting(meeting_id, state="queued", stage="В очереди", error=None)
-    _WORKER.submit(process, meeting_id)
+    resume_analysis = meeting["state"] == "error" and bool(meeting["segments"])
+    if not resume_analysis:
+        media = Path(meeting["media_path"])
+        if not media.exists() or media.stat().st_size < 1000:
+            raise ValueError("Запись пуста или ещё не сохранена")
+    store.update_meeting(meeting_id, state="queued",
+                         stage="В очереди на повторный анализ" if resume_analysis else "В очереди", error=None)
+    _WORKER.submit(_analyze_revision if resume_analysis else process, meeting_id)
     return store.get_meeting(meeting_id)
 
 
@@ -90,7 +94,11 @@ def approve(meeting_id: str, actor: str) -> dict[str, Any]:
         raise ValueError("Протокол ещё не готов к проверке")
     if not meeting["segments"]:
         raise ValueError("Нельзя утвердить протокол без транскрипта")
-    if any(name.endswith("(проверьте)") for name in meeting["speakers"].values()):
+    speaker_ids = {segment.get("speaker_id") for segment in meeting["segments"]}
+    names = meeting["speakers"]
+    if (not speaker_ids or not all(speaker_ids) or speaker_ids - names.keys()
+            or any(not isinstance(name, str) or not name.strip() or name.strip().endswith("(проверьте)")
+                   for name in names.values())):
         raise ValueError("Перед утверждением подтвердите имена всех говорящих или укажите «Не установлен»")
     if not meeting["summary"] or len(meeting["summary"]) < 100:
         raise ValueError("Саммари пустое или слишком краткое; проверьте его перед утверждением")

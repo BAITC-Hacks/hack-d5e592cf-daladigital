@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .config import DATA_DIR
 
-DATA_DIR = Path(os.getenv("PROTOCOL_DATA_DIR", ".data")).resolve()
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "protocols.sqlite3"
 _LOCK = threading.RLock()
