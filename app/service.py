@@ -33,9 +33,9 @@ def process(meeting_id: str) -> None:
                              speakers=speakers)
         result = inference.extract(segments, meeting["participants"], meeting["meeting_date"])
         store.update_meeting(meeting_id, stage="Формирование тематического саммари", items=result["items"])
-        summary = inference.summarize(segments)
+        report = inference.summarize_report(segments)
         store.update_meeting(meeting_id, state="review", stage="Ожидает проверки секретарём",
-                             summary=summary, items=result["items"])
+                             items=result["items"], **report)
         store.audit(meeting_id, "system", "processing_completed",
                     {"turns": len(segments), "items": len(result["items"])})
     except Exception as exc:
@@ -78,11 +78,12 @@ def reanalyze(meeting_id: str) -> dict[str, Any]:
 def _analyze_revision(meeting_id: str) -> None:
     meeting = store.get_meeting(meeting_id)
     try:
+        needs_summary = not meeting["summary"] or not meeting.get("summary_topics")
         store.update_meeting(meeting_id, state="processing", stage="Уточнение поручений"
-                             if meeting["summary"] else "Формирование тематического саммари")
-        if not meeting["summary"]:
-            summary = inference.summarize(meeting["segments"])
-            store.update_meeting(meeting_id, summary=summary, stage="Уточнение поручений")
+                             if not needs_summary else "Формирование тематического саммари")
+        if needs_summary:
+            report = inference.summarize_report(meeting["segments"])
+            store.update_meeting(meeting_id, stage="Уточнение поручений", **report)
         result = inference.extract(meeting["segments"], meeting["participants"], meeting["meeting_date"])
         store.update_meeting(meeting_id, items=result["items"], state="review", stage="Ожидает проверки секретарём")
     except Exception as exc:

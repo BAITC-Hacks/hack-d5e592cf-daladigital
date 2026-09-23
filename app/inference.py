@@ -139,9 +139,10 @@ _SUMMARY_SCHEMA: dict[str, Any] = {
     "properties": {"topics": {"type": "array", "minItems": 1, "maxItems": 6,
         "items": {"type": "object", "additionalProperties": False,
             "properties": {"title": {"type": "string"}, "text": {"type": "string"},
+                           "indicator": {"type": "string"}, "problem": {"type": "string"},
                            "source_segment_ids": {"type": "array", "minItems": 1,
                                                   "items": {"type": "string"}}},
-            "required": ["title", "text", "source_segment_ids"]}}},
+            "required": ["title", "text", "indicator", "problem", "source_segment_ids"]}}},
     "required": ["topics"],
 }
 
@@ -196,13 +197,18 @@ def _summary_blocks(raw: dict[str, Any], segments: list[dict[str, Any]]) -> tupl
             continue
         title = str(topic.get("title") or "").strip()
         body = str(topic.get("text") or "").strip()
+        indicator = str(topic.get("indicator") or "").strip()
+        problem = str(topic.get("problem") or "").strip()
         source_ids = [str(value) for value in topic.get("source_segment_ids", [])]
         evidence = " ".join(sources[value] for value in source_ids if value in sources)
         if not title or len(body) < 80:
             problems.append(f"Раздел {index}: нужны конкретные факты и связный содержательный текст")
+        elif not indicator or not problem:
+            problems.append(f"Раздел {index}: заполни indicator и problem фактами по теме; "
+                            "если соответствующих данных нет, укажи «Не указан»")
         elif not source_ids or any(value not in sources for value in source_ids):
             problems.append(f"Раздел {index}: укажи существующие ID всех подтверждающих реплик")
-        elif unsupported := _numbers(title + " " + body) - _numbers(evidence):
+        elif unsupported := _numbers(" ".join((title, body, indicator, problem))) - _numbers(evidence):
             problems.append(f"Раздел {index}: цифры {', '.join(sorted(unsupported))} отсутствуют "
                             "в цитируемых репликах; сохрани исходное написание и проверь ссылки")
         elif _evidence_text(body) in {"краткое фактическое саммари", "краткое содержание совещания"}:
@@ -212,16 +218,27 @@ def _summary_blocks(raw: dict[str, Any], segments: list[dict[str, Any]]) -> tupl
     return blocks, problems
 
 
-def summarize(segments: list[dict[str, Any]]) -> str:
+def summarize_report(segments: list[dict[str, Any]]) -> dict[str, Any]:
     if not segments:
         raise RuntimeError("Для саммари необходим непустой транскрипт")
     transcript = "\n".join(f"[{s['id']}] {s['text']}" for s in segments)
     prompt = (
         "Составь содержательное управленческое саммари совещания АО Самрук-Қазына на русском языке. "
         "Руководитель должен понять положение дел и итоги, не перечитывая транскрипт. "
-        "Выдели 2–4 тематических раздела по фактической повестке; если тема одна, достаточно одного, "
-        "при необходимости допустимо до 6. Не пропускай самостоятельные обсуждённые темы. "
-        "Заголовок каждого раздела — предмет обсуждения, а не слова 'Обсуждение', 'Саммари' или номер раздела. "
+        "Определи самостоятельные вопросы повестки по смыслу речи и переходам между ними; "
+        "число разделов должно соответствовать реально обсуждённым темам, а не заранее заданному числу. "
+        "Сохрани последовательность повестки. Если обсуждается один вопрос, нужен один раздел. "
+        "Группируй на уровне вопросов повестки: финансирование, закупки, поставки и отдельные проекты "
+        "внутри одного направления не выделяй автоматически в самостоятельные разделы. "
+        "Самостоятельный раздел нужен при переходе к другому предмету совещания. "
+        "title — конкретное содержательное название этого вопроса; не используй заглушки «Тема 1», "
+        "«Тема 2», «Обсуждение» или «Саммари». Номер части добавит оформление документа. "
+        "Каждый объект topics также является строкой таблицы «Направление / доклад | Показатель | Проблема». "
+        "title — название направления или предмет доклада; indicator — кратко фактический показатель "
+        "или текущее состояние (с единицами измерения, если названы); problem — кратко названная проблема "
+        "и её последствия или риск. Если для indicator или problem данных нет, запиши «Не указан». "
+        "Это структурированные поля по фактам из речи; в них не повторяй поручения, исполнителей и сроки "
+        "будущих задач — они попадут в отдельную таблицу поручений. Не создавай отдельную тему для каждого поручения. "
         "Под ним дай 2–4 связных предложения (обычно 40–90 слов): "
         "что происходит сейчас; конкретные показатели, объекты или организации; "
         "какая причина или проблема названа; к какому решению пришли и что остаётся нерешённым. "
@@ -234,7 +251,11 @@ def summarize(segments: list[dict[str, Any]]) -> str:
         "Не добавляй вводных фраз о том, что участники провели совещание, и общих пожеланий повысить эффективность. "
         "Все факты должны следовать ТОЛЬКО из транскрипта ниже. "
         "Если в разных репликах расходятся названия/цифры, не выбирай наугад: отметь необходимость проверки. "
-        "Для каждого раздела source_segment_ids должны включать ВСЕ реплики, подтверждающие его факты и цифры. "
+        "Для каждого раздела source_segment_ids должны включать ВСЕ относящиеся к нему реплики: "
+        "доклады, вопросы, обсуждение, решения, назначения поручений, ответы исполнителей и уточнения сроков. "
+        "Это также связывает отдельный реестр поручений с соответствующим разделом протокола. "
+        "Не ограничивай источники репликами с показателями; включай поручения по этому же вопросу, "
+        "даже когда их подробности не повторяются в тексте саммари. "
         "Не печатай ID в самом тексте раздела.\nТранскрипт:\n" + transcript
     )
     raw = _local_json(prompt, _SUMMARY_SCHEMA, max_tokens=2400)
@@ -247,7 +268,16 @@ def summarize(segments: list[dict[str, Any]]) -> str:
         blocks, problems = _summary_blocks(raw, segments)
     if problems or not blocks:
         raise RuntimeError("Саммари требует проверки: " + "; ".join(problems[:3]))
-    return "\n\n".join(blocks)
+    topics = [{"title": topic["title"].strip(), "text": topic["text"].strip(),
+               "indicator": topic["indicator"].strip(), "problem": topic["problem"].strip(),
+               "source_segment_ids": list(dict.fromkeys(str(value) for value in topic["source_segment_ids"]))}
+              for topic in raw["topics"]]
+    return {"summary": "\n\n".join(blocks), "summary_topics": topics}
+
+
+def summarize(segments: list[dict[str, Any]]) -> str:
+    """Compatibility wrapper for callers that only need the readable summary."""
+    return summarize_report(segments)["summary"]
 
 
 _ITEM_SCHEMA: dict[str, Any] = {

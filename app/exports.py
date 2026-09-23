@@ -1,72 +1,140 @@
-"""Readable, Unicode-safe protocol exports from approved data."""
-
+"""Themed protocol exports based on the supplied secretary's Word template."""
 from __future__ import annotations
-
+from copy import deepcopy
 from html import escape
 from io import BytesIO
+import os
 from pathlib import Path
+import re
 from typing import Any
 
-
+TEMPLATE = Path(__file__).with_name("assets") / "protocol-template.docx"
 LABELS = {"action": "Поручение", "decision": "Решение", "initiative": "Инициатива",
           "question": "Открытый вопрос", "risk": "Риск"}
-
 
 def _time(seconds: float) -> str:
     return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
 
-
-def _owner(item: dict[str, Any]) -> str:
-    return item.get("owner") or "Требует уточнения"
-
-
-def _due(item: dict[str, Any]) -> str:
-    return item.get("due_text") or "Не указан"
-
-
-def docx(meeting: dict[str, Any]) -> bytes:
-    from docx import Document
-    from docx.shared import Cm, Pt
-
-    document = Document()
-    section = document.sections[0]
-    section.top_margin = Cm(2.3)
-    section.bottom_margin = Cm(2.1)
-    section.left_margin = section.right_margin = Cm(2.3)
-    normal = document.styles["Normal"]
-    normal.font.name = "Arial"
-    normal.font.size = Pt(10)
-    document.add_heading("Протокол совещания", 0)
-    document.add_paragraph("АО «Самрук-Қазына»")
-    document.add_paragraph(f"Тема: {meeting['title']}")
-    document.add_paragraph(f"Дата: {meeting['meeting_date']} · Утверждён: {meeting['approved_at'] or '—'}")
-    if meeting["participants"]:
-        document.add_paragraph("Участники: " + ", ".join(meeting["participants"]))
-    document.add_heading("Краткое содержание", level=1)
-    document.add_paragraph(meeting["summary"] or "Саммари не сформировано")
-    document.add_heading("Решения, инициативы и поручения", level=1)
-    table = document.add_table(rows=1, cols=5)
-    table.style = "Table Grid"
-    for cell, label in zip(table.rows[0].cells, ("Тип", "Суть", "Ответственный", "Срок", "Источник")):
-        cell.text = label
+def sections(meeting: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+    """Associate tasks through cited speech, never through hardcoded agenda labels."""
+    topics = meeting.get("summary_topics") or []
+    if not topics:
+        for block in (meeting.get("summary") or "").split("\n\n"):
+            heading, separator, text = block.strip().partition("\n")
+            if heading:
+                topics.append({"title": heading if separator else "Итоги обсуждения",
+                               "text": text if separator else heading, "source_segment_ids": []})
+    parts = [{"title": re.sub(r"^(?:часть|тема)\s*\d+\s*[.:—–-]?\s*", "", str(t["title"]), flags=re.I),
+              "text": t["text"], "source_segment_ids": list(map(str, t.get("source_segment_ids", []))),
+              "items": []} for t in topics]
+    unassigned = []
     for item in meeting["items"]:
-        row = table.add_row().cells
-        values = (LABELS.get(item["kind"], item["kind"]), item["title"], _owner(item), _due(item),
-                  ", ".join(f"№{x}" for x in item["source_segment_ids"]))
-        for cell, value in zip(row, values):
-            cell.text = value
-    document.add_heading("Транскрипт", level=1)
-    for segment in meeting["segments"]:
-        speaker = meeting["speakers"].get(segment["speaker_id"], segment["speaker_id"])
-        document.add_paragraph(f"[{_time(segment['start'])}–{_time(segment['end'])}] №{segment['id']} · {speaker}: {segment['text']}")
-    buffer = BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
+        ids = set(map(str, item.get("source_segment_ids", [])))
+        scores = [len(ids.intersection(t["source_segment_ids"])) for t in parts]
+        if scores and max(scores):
+            parts[scores.index(max(scores))]["items"].append(item)
+        elif len(parts) == 1:
+            parts[0]["items"].append(item)
+        else:
+            unassigned.append(item)
+    return parts, unassigned
 
+def _task_rows(items):
+    return [[("Отменено: " if i.get("status") == "cancelled" else "") + i["title"],
+             i.get("owner") or "Требует уточнения", i.get("due_text") or "Не указан"]
+            for i in items if i["kind"] == "action"]
 
+def _items_flow(items):
+    rows = _task_rows(items)
+    if rows:
+        yield "section", "Поручения"
+        yield "table", rows
+    for item in items:
+        if item["kind"] != "action":
+            yield "body", f"{LABELS.get(item['kind'], item['kind'])}: {item['title']}"
+
+def _flow(meeting, include_transcript):
+    yield "title", "Протокол совещания"
+    yield "organization", os.getenv("PROTOCOL_ORGANIZATION", "АО «Самрук-Қазына»")
+    yield "subject", "Тема: " + meeting["title"]
+    status = "Утверждён" if meeting["state"] == "approved" else "ЧЕРНОВИК · не утверждён"
+    yield "metadata", f"Дата совещания: {meeting['meeting_date']} · {status}"
+    yield "heading", "Саммари по ключевым пунктам"
+    parts, remaining = sections(meeting)
+    for index, part in enumerate(parts, 1):
+        yield "section", f"Часть {index}. {part['title']}"
+        yield "body", part["text"]
+        yield from _items_flow(part["items"])
+    if remaining:
+        yield "section", "Общие поручения и решения"
+        yield from _items_flow(remaining)
+    if include_transcript:
+        yield "pagebreak", ""
+        yield "heading", "Текст совещания"
+        for segment in meeting["segments"]:
+            speaker = meeting["speakers"].get(segment["speaker_id"], segment["speaker_id"])
+            yield "section", f"{speaker} · {_time(segment['start'])}"
+            yield "body", segment["text"]
+
+def docx(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
+    document = Document(TEMPLATE)
+    patterns = [deepcopy(p._p) for p in document.paragraphs]
+    table_pattern = deepcopy(document.tables[0]._tbl)
+    body = document._element.body
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
+    roles = {"title": 0, "organization": 1, "subject": 2, "metadata": 3,
+             "heading": 4, "section": 5, "body": 6}
+    for kind, value in _flow(meeting, include_transcript):
+        if kind == "pagebreak":
+            document.add_page_break()
+        elif kind == "table":
+            element = deepcopy(table_pattern)
+            body.insert(len(body) - 1, element)
+            table = Table(element, document._body)
+            row_pattern = deepcopy(table.rows[1]._tr)
+            element.remove(table.rows[1]._tr)
+            table.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+            for values in value:
+                element.append(deepcopy(row_pattern))
+                row = table.rows[-1]
+                for cell, text in zip(row.cells, values):
+                    cell.text = text
+                row._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
+            for row_index, row in enumerate(table.rows):
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        p.paragraph_format.space_after = Pt(4)
+                        p.paragraph_format.space_before = Pt(4)
+                        for run in p.runs:
+                            run.font.name = "Times New Roman"
+                            run.font.size = Pt(11)
+                            run.bold = row_index == 0
+        else:
+            index = roles[kind]
+            element = deepcopy(patterns[index])
+            body.insert(len(body) - 1, element)
+            p = Paragraph(element, document._body)
+            for run in p.runs:
+                run.text = ""
+            run = p.runs[0] if p.runs else p.add_run()
+            run.text = value
+            if index in {1, 2, 3, 6}:
+                run.font.name = "Times New Roman"
+                run.font.size = Pt(9 if index == 3 else 11)
+            p.paragraph_format.keep_with_next = kind != "body"
+            p.paragraph_format.widow_control = True
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
 def _font_path() -> Path:
-    import os
-
     candidates = [os.getenv("PROTOCOL_PDF_FONT", ""),
                   "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                   "/Library/Fonts/Arial Unicode.ttf",
@@ -77,53 +145,46 @@ def _font_path() -> Path:
             return Path(candidate)
     raise RuntimeError("Не найден Unicode-шрифт для PDF. Задайте PROTOCOL_PDF_FONT")
 
-
-def pdf(meeting: dict[str, Any]) -> bytes:
+def pdf(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.utils import simpleSplit
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
-
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
     pdfmetrics.registerFont(TTFont("ProtocolUnicode", str(_font_path())))
-    body = ParagraphStyle("body", fontName="ProtocolUnicode", fontSize=9, leading=13, spaceAfter=7)
-    title = ParagraphStyle("title", parent=body, fontSize=17, leading=21, alignment=TA_CENTER, spaceAfter=16)
-    heading = ParagraphStyle("heading", parent=body, fontSize=12, leading=16, spaceBefore=14, spaceAfter=8)
-    tiny = ParagraphStyle("tiny", parent=body, fontSize=8, leading=11, spaceAfter=0)
-    story: list[Any] = [Paragraph("Протокол совещания", title),
-                        Paragraph("АО «Самрук-Қазына»", body),
-                        Paragraph(f"Тема: {escape(meeting['title'])}", body),
-                        Paragraph(f"Дата: {escape(meeting['meeting_date'])} · Утверждён: {escape(meeting['approved_at'] or '—')}", body)]
-    if meeting["participants"]:
-        story.append(Paragraph("Участники: " + escape(", ".join(meeting["participants"])), body))
-    story.append(Paragraph("Краткое содержание", heading))
-    for block in (meeting["summary"] or "Саммари не сформировано").split("\n\n"):
-        story.append(Paragraph(escape(block).replace("\n", "<br/>"), body))
-    story.append(Paragraph("Решения, инициативы и поручения", heading))
-    cells = [[Paragraph(escape(label), tiny) for label in ("Тип", "Суть", "Ответственный", "Срок", "Источник")]]
-    for item in meeting["items"]:
-        values = (LABELS.get(item["kind"], item["kind"]), item["title"], _owner(item), _due(item),
-                  ", ".join(f"№{x}" for x in item["source_segment_ids"]))
-        cells.append([Paragraph(escape(value), tiny) for value in values])
-    table = Table(cells, colWidths=[62, 183, 92, 91, 65], repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9EEF3")),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C5CFD7")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story += [table, Paragraph("Транскрипт", heading)]
-    for segment in meeting["segments"]:
-        speaker = meeting["speakers"].get(segment["speaker_id"], segment["speaker_id"])
-        story.append(Paragraph(escape(
-            f"[{_time(segment['start'])}–{_time(segment['end'])}] №{segment['id']} · {speaker}: {segment['text']}"
-        ), body))
-    buffer = BytesIO()
-    document = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=50, rightMargin=50,
-                                 topMargin=45, bottomMargin=45, title="Протокол совещания")
-    document.build(story)
-    return buffer.getvalue()
+    normal = ParagraphStyle("body", fontName="ProtocolUnicode", fontSize=10.5, leading=14, spaceAfter=7)
+    title = ParagraphStyle("title", parent=normal, fontSize=25, leading=30, alignment=TA_CENTER,
+                           spaceAfter=8, keepWithNext=True)
+    center = ParagraphStyle("center", parent=normal, alignment=TA_CENTER, keepWithNext=True)
+    metadata = ParagraphStyle("metadata", parent=center, fontSize=8, leading=11)
+    heading = ParagraphStyle("heading", parent=normal, fontSize=15, leading=19, spaceBefore=15,
+                             spaceAfter=9, textColor=colors.HexColor("#2E74B5"), keepWithNext=True)
+    subheading = ParagraphStyle("part", parent=heading, fontSize=12.5, leading=16, spaceBefore=13)
+    cell = ParagraphStyle("cell", parent=normal, fontSize=10, leading=13, spaceAfter=0)
+    styles = {"title": title, "organization": center, "subject": center, "metadata": metadata,
+              "heading": heading, "section": subheading, "body": normal}
+    def p(value, style=normal):
+        return Paragraph(escape(str(value)).replace("\n", "<br/>"), style)
+    story = []
+    for kind, value in _flow(meeting, include_transcript):
+        if kind == "pagebreak":
+            story.append(PageBreak())
+        elif kind == "table":
+            rows = [[p(v, cell) for v in ["Поручение", "Ответственный", "Срок"]]]
+            rows.extend([[p(v, cell) for v in row] for row in value])
+            table = Table(rows, colWidths=[210.6, 140.4, 117], repeatRows=1, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
+                ("GRID", (0, 0), (-1, -1), .4, colors.HexColor("#657383")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+            story.extend([table, Spacer(1, 8)])
+        else:
+            story.append(p(value, styles[kind]))
+    output = BytesIO()
+    SimpleDocTemplate(output, pagesize=letter, leftMargin=72, rightMargin=72,
+                      topMargin=72, bottomMargin=72, title="Протокол совещания").build(story)
+    return output.getvalue()

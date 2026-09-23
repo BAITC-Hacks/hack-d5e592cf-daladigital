@@ -63,17 +63,41 @@ class ProtocolTests(unittest.TestCase):
             "kind": "action", "title": "Подготовить план", "owner": "Гульмира",
             "due_text": "15 октября", "due_date": "2026-10-15", "source_segment_ids": ["1"]})
         self.assertEqual(item.status_code, 201)
-        self.assertEqual(self.client.get(f"/api/meetings/{m['id']}/export?format=pdf").status_code, 409)
+        draft = self.client.get(f"/api/meetings/{m['id']}/export?format=pdf")
+        self.assertEqual(draft.status_code, 200)
+        self.assertTrue(draft.content.startswith(b"%PDF"))
+        self.assertIn('attachment; filename="draft-protocol-', draft.headers["content-disposition"])
         approved = self.client.post(f"/api/meetings/{m['id']}/approve", json={"actor": "Секретарь", "confirmed": True})
         self.assertEqual(approved.status_code, 200)
         docx = self.client.get(f"/api/meetings/{m['id']}/export?format=docx")
         self.assertEqual(docx.status_code, 200)
         self.assertTrue(docx.content.startswith(b"PK"))
+        self.assertIn('attachment; filename="protocol-approved-', docx.headers["content-disposition"])
         pdf = self.client.get(f"/api/meetings/{m['id']}/export?format=pdf")
         self.assertEqual(pdf.status_code, 200)
         self.assertTrue(pdf.content.startswith(b"%PDF"))
         self.assertEqual(self.client.patch(f"/api/meetings/{m['id']}/items/{item.json()['id']}",
             json={"actor": "Секретарь", "changes": {"title": "Другая суть"}}).status_code, 409)
+
+    def test_summary_edit_clears_stale_topics_and_export_requires_content(self) -> None:
+        meeting = store.create_meeting(title="Тематическое содержание", meeting_date="2026-09-23", source="upload",
+                                       provider=None, participants=[], suffix=".wav")
+        self.assertEqual(meeting["summary_topics"], [])
+        store.update_meeting(meeting["id"], state="review", summary="Исходное содержание",
+                             summary_topics=[{"title": "Прежняя тема"}])
+        self.assertEqual(self.client.get(f"/api/meetings/{meeting['id']}/export?format=docx").status_code, 409)
+        edited = self.client.patch(f"/api/meetings/{meeting['id']}/summary",
+                                  json={"actor": "Секретарь", "summary": "Исправленное содержание совещания"})
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(edited.json()["summary_topics"], [])
+        self.assertEqual(store.get_meeting(meeting["id"])["summary_topics"], [])
+        store.update_meeting(meeting["id"], state="error", segments=[{"id": "1", "start": 0.0, "end": 1.0,
+                             "speaker_id": "S1", "text": "Обсудили план"}])
+        with patch("app.main.exports.docx", return_value=b"PK-export") as export_docx:
+            response = self.client.get(f"/api/meetings/{meeting['id']}/export?format=docx&include_transcript=true")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(export_docx.call_args.kwargs, {"include_transcript": True})
+        self.assertIn("draft-protocol-", response.headers["content-disposition"])
 
     def test_retry_resumes_existing_transcript_and_preserves_names(self) -> None:
         meeting = store.create_meeting(title="Повтор анализа", meeting_date="2026-09-23", source="upload",

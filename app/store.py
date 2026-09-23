@@ -47,6 +47,7 @@ def init_db() -> None:
                 stage TEXT NOT NULL,
                 error TEXT,
                 summary TEXT NOT NULL DEFAULT '',
+                summary_topics_json TEXT NOT NULL DEFAULT '[]',
                 segments_json TEXT NOT NULL DEFAULT '[]',
                 items_json TEXT NOT NULL DEFAULT '[]',
                 speakers_json TEXT NOT NULL DEFAULT '{}',
@@ -65,11 +66,16 @@ def init_db() -> None:
             );
             """
         )
+        # Serialize the check and ALTER across processes starting against an old archive.
+        connection.execute("BEGIN IMMEDIATE")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(meetings)")}
+        if "summary_topics_json" not in columns:
+            connection.execute("ALTER TABLE meetings ADD COLUMN summary_topics_json TEXT NOT NULL DEFAULT '[]'")
 
 
 def _decode(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
-    for key in ("participants_json", "segments_json", "items_json", "speakers_json", "gaps_json"):
+    for key in ("participants_json", "segments_json", "items_json", "speakers_json", "gaps_json", "summary_topics_json"):
         item[key.removesuffix("_json")] = json.loads(item.pop(key))
     return item
 
@@ -118,7 +124,7 @@ def list_meetings() -> list[dict[str, Any]]:
     return [_decode(row) for row in rows]
 
 
-_JSON_FIELDS = {"participants", "segments", "items", "speakers", "gaps"}
+_JSON_FIELDS = {"participants", "segments", "items", "speakers", "gaps", "summary_topics"}
 _EDITABLE_FIELDS = _JSON_FIELDS | {"state", "stage", "error", "summary", "approved_at"}
 
 

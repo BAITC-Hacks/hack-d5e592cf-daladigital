@@ -271,7 +271,7 @@ def edit_summary(meeting_id: str, body: SummaryEdit) -> dict:
     if entry["state"] != "review":
         raise HTTPException(409, "Саммари меняется только до утверждения")
     store.audit(meeting_id, body.actor, "summary_edited", {"before": entry["summary"], "after": body.summary})
-    return store.update_meeting(meeting_id, summary=body.summary.strip())
+    return store.update_meeting(meeting_id, summary=body.summary.strip(), summary_topics=[])
 
 
 @app.patch("/api/meetings/{meeting_id}/speakers/{speaker_id}")
@@ -297,14 +297,15 @@ def approve(meeting_id: str, body: Approval) -> dict:
 
 
 @app.get("/api/meetings/{meeting_id}/export")
-def export(meeting_id: str, format: Literal["pdf", "docx"]) -> StreamingResponse:
+def export(meeting_id: str, format: Literal["pdf", "docx"], include_transcript: bool = False) -> StreamingResponse:
     entry = _meeting(meeting_id)
-    if entry["state"] != "approved":
-        raise HTTPException(409, "Экспорт доступен после утверждения протокола")
-    payload = exports.pdf(entry) if format == "pdf" else exports.docx(entry)
+    if entry["state"] not in {"review", "approved", "error"} or not entry["summary"].strip() or not entry["segments"]:
+        raise HTTPException(409, "Для скачивания нужны готовые саммари и транскрипт")
+    payload = exports.pdf(entry, include_transcript=include_transcript) if format == "pdf" else exports.docx(entry, include_transcript=include_transcript)
     mime = "application/pdf" if format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    prefix = "protocol-approved" if entry["state"] == "approved" else "draft-protocol"
     return StreamingResponse(BytesIO(payload), media_type=mime,
-                             headers={"Content-Disposition": f'attachment; filename="protocol-{meeting_id}.{format}"'})
+                             headers={"Content-Disposition": f'attachment; filename="{prefix}-{meeting_id}.{format}"'})
 
 
 @app.get("/api/meetings/{meeting_id}/media")
