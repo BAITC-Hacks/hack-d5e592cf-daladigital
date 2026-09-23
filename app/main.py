@@ -297,7 +297,7 @@ def approve(meeting_id: str, body: Approval) -> dict:
 
 
 @app.get("/api/meetings/{meeting_id}/export")
-def export(meeting_id: str, format: Literal["pdf", "docx"], include_transcript: bool = False) -> StreamingResponse:
+def export(meeting_id: str, format: Literal["pdf", "docx"], include_transcript: bool = True) -> StreamingResponse:
     entry = _meeting(meeting_id)
     if entry["state"] not in {"review", "approved", "error"} or not entry["summary"].strip() or not entry["segments"]:
         raise HTTPException(409, "Для скачивания нужны готовые саммари и транскрипт")

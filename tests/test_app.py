@@ -11,7 +11,7 @@ from unittest.mock import patch
 os.environ["PROTOCOL_DATA_DIR"] = tempfile.mkdtemp(prefix="protocol-test-")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from app import inference, service, store  # noqa: E402
+from app import exports, inference, service, store  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -94,10 +94,45 @@ class ProtocolTests(unittest.TestCase):
         store.update_meeting(meeting["id"], state="error", segments=[{"id": "1", "start": 0.0, "end": 1.0,
                              "speaker_id": "S1", "text": "Обсудили план"}])
         with patch("app.main.exports.docx", return_value=b"PK-export") as export_docx:
-            response = self.client.get(f"/api/meetings/{meeting['id']}/export?format=docx&include_transcript=true")
+            response = self.client.get(f"/api/meetings/{meeting['id']}/export?format=docx")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(export_docx.call_args.kwargs, {"include_transcript": True})
         self.assertIn("draft-protocol-", response.headers["content-disposition"])
+        with patch("app.main.exports.docx", return_value=b"PK-compact") as export_docx:
+            compact = self.client.get(f"/api/meetings/{meeting['id']}/export?format=docx&include_transcript=false")
+        self.assertEqual(compact.status_code, 200)
+        self.assertEqual(export_docx.call_args.kwargs, {"include_transcript": False})
+
+    def test_export_flow_places_full_speech_before_final_thematic_summary(self) -> None:
+        meeting = {
+            "title": "План и безопасность", "meeting_date": "2026-09-23", "state": "review",
+            "speakers": {"S1": "Председатель", "S2": "Гульмира"},
+            "segments": [
+                {"id": "1", "start": 0.0, "end": 2.0, "speaker_id": "S1", "text": "Гульмира, подготовьте план закупок."},
+                {"id": "2", "start": 3.0, "end": 5.0, "speaker_id": "S2", "text": "Датчики проверим на всех площадках."},
+            ],
+            "summary": "Обсуждены закупки и проверка датчиков.",
+            "summary_topics": [
+                {"title": "План закупок", "text": "Поручено подготовить план закупок.", "source_segment_ids": ["1"]},
+                {"title": "Безопасность", "text": "Запланирована проверка датчиков.", "source_segment_ids": ["2"]},
+            ],
+            "items": [{"id": "a1", "kind": "action", "title": "Составить план закупок", "owner": "Гульмира",
+                       "due_text": "До пятницы", "source_segment_ids": ["1"]}],
+        }
+        full = list(exports._flow(meeting, include_transcript=True))
+        summary_index = full.index(("heading", "Саммари по ключевым пунктам"))
+        for segment in meeting["segments"]:
+            speech_index = next(index for index, (_, value) in enumerate(full) if segment["text"] in str(value))
+            self.assertLess(speech_index, summary_index)
+        final_summary = full[summary_index + 1:]
+        for topic in meeting["summary_topics"]:
+            self.assertTrue(any(topic["title"] in str(value) for _, value in final_summary))
+            self.assertIn(("body", topic["text"]), final_summary)
+        self.assertTrue(any(kind == "table" and "Составить план закупок" in str(value) for kind, value in final_summary))
+        compact = list(exports._flow(meeting, include_transcript=False))
+        for segment in meeting["segments"]:
+            self.assertFalse(any(segment["text"] in str(value) for _, value in compact))
+        self.assertIn(("heading", "Саммари по ключевым пунктам"), compact)
 
     def test_retry_resumes_existing_transcript_and_preserves_names(self) -> None:
         meeting = store.create_meeting(title="Повтор анализа", meeting_date="2026-09-23", source="upload",

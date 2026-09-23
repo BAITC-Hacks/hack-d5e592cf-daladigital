@@ -53,30 +53,45 @@ def _items_flow(items):
         if item["kind"] != "action":
             yield "body", f"{LABELS.get(item['kind'], item['kind'])}: {item['title']}"
 
+def _transcript_flow(meeting, parts):
+    """Keep every turn once, in recording order, under actual agenda headings."""
+    active = None
+    seen = set()
+    for segment in sorted(meeting["segments"], key=lambda s: s["start"]):
+        matches = [i for i, part in enumerate(parts) if str(segment["id"]) in part["source_segment_ids"]]
+        topic = active if active in matches else matches[0] if matches else active
+        if topic != active or not seen:
+            if topic is None:
+                yield "heading", "Текст совещания"
+            else:
+                continued = " · продолжение" if topic in seen else ""
+                yield "heading", f"Часть {topic + 1}. {parts[topic]['title']}{continued}"
+            seen.add(topic)
+            active = topic
+        speaker = meeting["speakers"].get(segment["speaker_id"], segment["speaker_id"])
+        yield "speaker", f"{speaker} · {_time(segment['start'])}"
+        yield "body", segment["text"]
+
 def _flow(meeting, include_transcript):
     yield "title", "Протокол совещания"
     yield "organization", os.getenv("PROTOCOL_ORGANIZATION", "АО «Самрук-Қазына»")
     yield "subject", "Тема: " + meeting["title"]
     status = "Утверждён" if meeting["state"] == "approved" else "ЧЕРНОВИК · не утверждён"
     yield "metadata", f"Дата совещания: {meeting['meeting_date']} · {status}"
-    yield "heading", "Саммари по ключевым пунктам"
     parts, remaining = sections(meeting)
+    if include_transcript:
+        yield from _transcript_flow(meeting, parts)
+        yield "pagebreak", ""
+    yield "heading", "Саммари по ключевым пунктам"
     for index, part in enumerate(parts, 1):
-        yield "section", f"Часть {index}. {part['title']}"
+        yield "section", f"Тема {index}. {part['title']}"
         yield "body", part["text"]
         yield from _items_flow(part["items"])
     if remaining:
         yield "section", "Общие поручения и решения"
         yield from _items_flow(remaining)
-    if include_transcript:
-        yield "pagebreak", ""
-        yield "heading", "Текст совещания"
-        for segment in meeting["segments"]:
-            speaker = meeting["speakers"].get(segment["speaker_id"], segment["speaker_id"])
-            yield "section", f"{speaker} · {_time(segment['start'])}"
-            yield "body", segment["text"]
 
-def docx(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
+def docx(meeting: dict[str, Any], *, include_transcript: bool = True) -> bytes:
     from docx import Document
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -91,7 +106,7 @@ def docx(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
         if child.tag != qn("w:sectPr"):
             body.remove(child)
     roles = {"title": 0, "organization": 1, "subject": 2, "metadata": 3,
-             "heading": 4, "section": 5, "body": 6}
+             "heading": 4, "section": 5, "body": 6, "speaker": 6}
     for kind, value in _flow(meeting, include_transcript):
         if kind == "pagebreak":
             document.add_page_break()
@@ -129,6 +144,9 @@ def docx(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
             if index in {1, 2, 3, 6}:
                 run.font.name = "Times New Roman"
                 run.font.size = Pt(9 if index == 3 else 11)
+            if kind == "speaker":
+                run.bold = True
+                p.paragraph_format.space_before = Pt(6)
             p.paragraph_format.keep_with_next = kind != "body"
             p.paragraph_format.widow_control = True
     output = BytesIO()
@@ -145,7 +163,7 @@ def _font_path() -> Path:
             return Path(candidate)
     raise RuntimeError("Не найден Unicode-шрифт для PDF. Задайте PROTOCOL_PDF_FONT")
 
-def pdf(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
+def pdf(meeting: dict[str, Any], *, include_transcript: bool = True) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import letter
@@ -162,9 +180,10 @@ def pdf(meeting: dict[str, Any], *, include_transcript: bool = False) -> bytes:
     heading = ParagraphStyle("heading", parent=normal, fontSize=15, leading=19, spaceBefore=15,
                              spaceAfter=9, textColor=colors.HexColor("#2E74B5"), keepWithNext=True)
     subheading = ParagraphStyle("part", parent=heading, fontSize=12.5, leading=16, spaceBefore=13)
+    speaker = ParagraphStyle("speaker", parent=normal, spaceBefore=7, spaceAfter=3, keepWithNext=True)
     cell = ParagraphStyle("cell", parent=normal, fontSize=10, leading=13, spaceAfter=0)
     styles = {"title": title, "organization": center, "subject": center, "metadata": metadata,
-              "heading": heading, "section": subheading, "body": normal}
+              "heading": heading, "section": subheading, "body": normal, "speaker": speaker}
     def p(value, style=normal):
         return Paragraph(escape(str(value)).replace("\n", "<br/>"), style)
     story = []
