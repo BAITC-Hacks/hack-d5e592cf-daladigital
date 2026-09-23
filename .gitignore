@@ -1,0 +1,11 @@
+data/
+models/
+.venv/
+.teams-bot-profile/
+.teams-meeting-url
+.meet-bot-profile/
+.meet-meeting-url
+.build/
+__pycache__/
+*.pyc
+.worktrees/

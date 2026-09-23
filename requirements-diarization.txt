@@ -1,0 +1,2 @@
+-r requirements-capture.txt
+pyannote.audio>=3,<5

@@ -1,0 +1,3 @@
+-r requirements-local.txt
+numpy>=2,<3
+SoundCard>=0.4,<1
