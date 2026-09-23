@@ -1,0 +1,2 @@
+-r requirements-capture.txt
+playwright>=1.50,<2

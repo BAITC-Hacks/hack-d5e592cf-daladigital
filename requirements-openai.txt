@@ -1,0 +1,2 @@
+openai>=1.80,<3
+python-docx>=1.1,<2

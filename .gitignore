@@ -1,5 +1,6 @@
 .venv/
 .data/
+data/
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -12,3 +13,9 @@ work/
 *.mp4
 .DS_Store
 *.ses
+.teams-bot-profile/
+.teams-meeting-url
+.meet-bot-profile/
+.meet-meeting-url
+.build/
+.worktrees/
