@@ -1,0 +1,2 @@
+"""Local meeting protocol assistant."""
+

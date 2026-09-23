@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Протоколист · Самрук-Қазына</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><div class="brandmark">S</div><div><strong>AI Протоколист</strong><small>Самрук-Қазына · локальный контур</small></div></div>
+    <nav><button class="nav active" data-view="overview">Обзор</button><button class="nav" data-view="new">Новое совещание</button><button class="nav" data-view="meetings">Протоколы</button><button class="nav" data-view="dashboard">Поручения</button></nav>
+    <div class="side-bottom"><span class="privacy-dot"></span> Аудио обрабатывается локально<div class="small muted">Ассистент секретаря · прототип</div></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumbs">Рабочее пространство <span>/</span> <b id="page-title">Обзор</b></div><div class="top-actions"><span id="system-pill" class="pill">Проверка компонентов…</span><button class="button primary" id="new-top">+ Новое совещание</button></div></header>
+    <div id="flash" role="alert" hidden></div>
+    <section id="overview" class="view">
+      <div class="hero"><div><p class="eyebrow">ИНТЕЛЛЕКТУАЛЬНЫЙ КОНТУР УПРАВЛЕНИЯ</p><h1>От разговора<br>к исполнению.</h1><p>Записывайте, проверяйте решения и держите поручения под контролем — с привязкой к исходным репликам.</p><button class="button primary light" data-go="new">Создать протокол <span>↗</span></button></div><div class="hero-art"><div class="pulse p1"></div><div class="pulse p2"></div><div class="pulse p3"></div><div class="hero-symbol">✦</div></div></div>
+      <div class="section-heading"><h2>Быстрый старт</h2><span>Три способа начать</span></div>
+      <div class="entry-grid"><button class="entry" data-source="room"><span class="entry-icon">◉</span><b>Переговорная</b><small>Живой звук микрофона</small><span class="entry-arrow">↗</span></button><button class="entry" data-source="upload"><span class="entry-icon">⇧</span><b>Готовая запись</b><small>MP3, WAV, M4A, MP4</small><span class="entry-arrow">↗</span></button><button class="entry" data-source="platform"><span class="entry-icon">▣</span><b>Онлайн-встреча</b><small>Meet, Zoom или Teams</small><span class="entry-arrow">↗</span></button></div>
+      <div class="section-heading"><h2>Последние совещания</h2><button class="link" data-go="meetings">Все протоколы →</button></div><div id="recent-list" class="list-card"></div>
+    </section>
+    <section id="new" class="view" hidden>
+      <p class="eyebrow blue">НОВОЕ СОВЕЩАНИЕ</p><h1 class="page-heading">Выберите источник звука</h1><p class="subtitle">Любой вход ведёт в единый локальный конвейер распознавания и проверки.</p>
+      <div class="source-tabs"><button data-tab="upload" class="selected">⇧ Загрузить файл</button><button data-tab="room">◉ Переговорная</button><button data-tab="platform">▣ Онлайн-встреча</button></div>
+      <form id="meeting-form" class="form-card">
+        <div class="form-row"><label>Тема совещания<input id="meeting-title" required minlength="2" maxlength="200" placeholder="Например: Развитие химической отрасли"></label><label>Дата совещания<input id="meeting-date" type="date" required></label></div>
+        <label>Участники <span class="hint">необязательно, через запятую</span><input id="meeting-participants" placeholder="Гульмира, Асхат, председатель…"></label>
+        <div id="upload-fields" class="mode-fields"><label class="dropzone" for="meeting-file"><span>⇧</span><b>Выберите аудио или видеофайл</b><small>MP3, WAV, M4A, MP4, WebM · до 500 МБ</small><input id="meeting-file" type="file" accept=".mp3,.wav,.m4a,.mp4,.webm,.ogg"></label><div id="file-name" class="small muted"></div></div>
+        <div id="room-fields" class="mode-fields" hidden><div class="info"><b>Запись в переговорной</b><p>Браузер запросит доступ к микрофону. Запись и последующая обработка остаются на этом устройстве.</p></div></div>
+        <div id="platform-fields" class="mode-fields" hidden>
+          <div class="info warning"><b>Сопровождаемое подключение, не автономный бот</b><p>Откройте встречу в Chrome, войдите вручную как «AI Протоколист» и попросите организатора допустить участника. Затем выберите вкладку встречи и включите «Передавать звук вкладки». Настройки организации могут запретить гостевой вход.</p></div>
+          <div class="providers"><button type="button" data-provider="meet" class="provider selected"><span class="provider-icon meet">M</span>Google Meet</button><button type="button" data-provider="zoom" class="provider"><span class="provider-icon zoom">Z</span>Zoom</button><button type="button" data-provider="teams" class="provider"><span class="provider-icon teams">T</span>Teams</button></div>
+          <label>Ссылка на встречу<input id="meeting-url" type="url" placeholder="https://meet.google.com/…"></label>
+          <ol class="steps"><li>Откройте встречу в новой вкладке Chrome</li><li>Войдите под именем «AI Протоколист» и дождитесь допуска</li><li>Уведомите участников о записи и транскрибации</li><li>Выберите именно вкладку встречи и включите её звук</li><li>Убедитесь, что индикатор реагирует на речь, затем начните запись</li></ol>
+          <button type="button" id="open-meeting" class="button secondary">Открыть встречу ↗</button>
+        </div>
+        <label class="checkbox"><input id="consent" type="checkbox"><span>Я уведомил участников о записи и обработке речи и получил необходимое согласие.</span></label>
+        <div class="form-actions"><span class="muted small">Видео не сохраняется. Протокол требует проверки секретарём.</span><button id="submit-meeting" class="button primary" type="submit">Начать обработку →</button></div>
+      </form>
+      <div id="recorder" class="recorder" hidden><div class="recorder-top"><div><p class="eyebrow">ПРОВЕРКА ЗВУКА / ЗАПИСЬ</p><h2 id="record-title">Запись совещания</h2><p id="record-status">Ожидание звука…</p></div><div id="record-timer" class="timer">00:00</div></div><div class="meter"><div id="meter-fill"></div></div><p id="record-note" class="small muted">Индикатор «Звук поступает» появится только при обнаружении реального сигнала.</p><button id="begin-recording" class="button primary" disabled>Начать запись</button> <button id="stop-recording" class="button danger" hidden>Остановить и обработать</button></div>
+    </section>
+    <section id="meetings" class="view" hidden><p class="eyebrow blue">АРХИВ</p><h1 class="page-heading">Протоколы совещаний</h1><p class="subtitle">Черновики проверяются человеком перед экспортом.</p><div id="all-list" class="list-card"></div></section>
+    <section id="dashboard" class="view" hidden><p class="eyebrow blue">ИСПОЛНЕНИЕ</p><h1 class="page-heading">Контроль поручений</h1><p class="subtitle">Данные из утверждённых протоколов. Напоминания и рассылка пока не автоматизированы.</p><div id="stats" class="stats"></div><div id="action-list" class="list-card"></div></section>
+    <section id="detail" class="view" hidden><button id="back-to-list" class="link">← К протоколам</button><div class="detail-head"><div><p class="eyebrow blue" id="detail-sub">ПРОТОКОЛ</p><h1 class="page-heading" id="detail-title"></h1><p id="detail-meta" class="subtitle"></p></div><span id="detail-state" class="state"></span></div><div id="detail-stage" class="info"></div><div id="detail-content" hidden><div class="detail-actions"><button id="approve" class="button primary">Утвердить протокол</button><a id="export-pdf" class="button secondary" download>PDF ↓</a><a id="export-docx" class="button secondary" download>DOCX ↓</a><button id="retry" class="button secondary" hidden>Повторить обработку</button></div><div class="detail-grid"><div><div class="panel"><h2>Краткое содержание <button id="edit-summary" class="link">Изменить</button></h2><p id="detail-summary"></p></div><div class="panel"><h2>Решения и поручения <span id="item-count"></span> <button id="add-item" class="link">+ Добавить</button></h2><div id="detail-items"></div></div></div><div><div class="panel"><h2>Исходная запись</h2><audio id="source-audio" controls preload="metadata"></audio><p class="small muted">Нажмите на время реплики, чтобы перейти к фрагменту.</p><div id="detail-gaps"></div></div><div class="panel"><h2>Транскрипт</h2><div id="detail-segments" class="transcript"></div></div></div></div></div></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+.venv/
+.data/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+models/
+work/
+*.wav
+*.mp3
+*.m4a
+*.mp4
+.DS_Store
+*.ses
