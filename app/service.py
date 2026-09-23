@@ -78,9 +78,11 @@ def reanalyze(meeting_id: str) -> dict[str, Any]:
 def _analyze_revision(meeting_id: str) -> None:
     meeting = store.get_meeting(meeting_id)
     try:
-        store.update_meeting(meeting_id, state="processing", stage="Формирование тематического саммари")
-        summary = inference.summarize(meeting["segments"])
-        store.update_meeting(meeting_id, summary=summary, stage="Уточнение поручений")
+        store.update_meeting(meeting_id, state="processing", stage="Уточнение поручений"
+                             if meeting["summary"] else "Формирование тематического саммари")
+        if not meeting["summary"]:
+            summary = inference.summarize(meeting["segments"])
+            store.update_meeting(meeting_id, summary=summary, stage="Уточнение поручений")
         result = inference.extract(meeting["segments"], meeting["participants"], meeting["meeting_date"])
         store.update_meeting(meeting_id, items=result["items"], state="review", stage="Ожидает проверки секретарём")
     except Exception as exc:

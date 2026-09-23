@@ -279,6 +279,8 @@ def _prompt(segments: list[dict[str, Any]], participants: list[str], meeting_dat
         "без конкретного поручения; question = открытый вопрос; risk = обозначенный риск. "
         "Фраза 'нужно развить отрасль' — initiative, не action. "
         "Название должно коротко описывать ожидаемый результат, description — содержать объём и условия поручения. "
+        "В description сохраняй обязательные условия выполнения, критерии проверки/приёмки результата "
+        "и условные последующие действия. Не заменяй эти условия повтором имени и срока. "
         "Не придумывай фамилии, сроки, решения и факты. Различай говорящего и назначенного исполнителя: "
         "слова 'Гульмира, вам слово' передают слово, но сами по себе не назначают исполнителя последующих поручений. "
         "Для owner копируй имя, должность или подразделение из реплики, где действительно назначают исполнителя. "
@@ -335,8 +337,52 @@ def _normalize_due(raw: str | None, meeting_date: str) -> str | None:
     return None
 
 
+def _extraction_problems(raw: dict[str, Any], segments: list[dict[str, Any]]) -> list[str]:
+    """Find missing assignment context before conservative grounding removes fields."""
+    sources = {str(segment["id"]): segment["text"] for segment in segments}
+    covered: set[str] = set()
+    problems = []
+    for index, candidate in enumerate(raw.get("items", []), 1):
+        source_ids = [str(value) for value in candidate.get("source_segment_ids", [])]
+        covered.update(value for value in source_ids if value in sources)
+        evidence = _evidence_text(" ".join(sources[value] for value in source_ids if value in sources))
+        if not source_ids or any(value not in sources for value in source_ids):
+            problems.append(f"Элемент {index}: нужны существующие ID всех подтверждающих реплик")
+        for key, label in (("owner", "исполнитель"), ("due_text", "срок")):
+            value = str(candidate.get(key) or "").strip()
+            if value and f" {_evidence_text(value)} " not in f" {evidence} ":
+                problems.append(f"Элемент {index}: {label} «{value}» отсутствует в указанных репликах. "
+                                "Проверь обращение по имени, назначение и ответ в соседних репликах")
+    # Imperatives are review cues, not proof that an assignment was accepted.
+    imperative = re.compile(
+        r"\b(?:разберитесь|свяжитесь|запросите|подготовьте|проведите|проводите|проверьте|"
+        r"представьте|обеспечьте|разработайте|организуйте|согласуйте|зафиксируйте|"
+        r"поручаю|поручаем|жду|ждем|тапсырамын|дайындаңыз|өткізіңіз|тексеріңіз)\b", re.I)
+    for source_id, text in sources.items():
+        if source_id not in covered and imperative.search(text.replace("ё", "е")):
+            problems.append(f"Реплика [{source_id}] не отражена в источниках элементов, хотя содержит "
+                            "возможное поручение. Проверь её вместе с соседними репликами")
+    return problems
+
+
 def extract(segments: list[dict[str, Any]], participants: list[str], meeting_date: str) -> dict[str, Any]:
-    raw = _local_json(_prompt(segments, participants, meeting_date), _ITEM_SCHEMA)
+    prompt = _prompt(segments, participants, meeting_date)
+    raw = _local_json(prompt, _ITEM_SCHEMA)
+    problems = _extraction_problems(raw, segments)
+    if problems:
+        repair = (prompt + "\nПредыдущий результат:\n" + json.dumps(raw, ensure_ascii=False)
+                  + "\nПроверь полноту и источники. Исправь следующие замечания:\n" + "\n".join(problems)
+                  + "\nВерни ПОЛНЫЙ исправленный список, сохранив все корректные элементы. "
+                  "Для каждого замечания перечитай соседние реплики: имя может быть в обращении перед "
+                  "поручением, а окончательный срок — в ответе или уточнении после него. "
+                  "Включи ID всех этих подтверждающих реплик, в том числе изменение срока и согласие. "
+                  "Если поручение пропущено, добавь его; самостоятельные результаты не объединяй. "
+                  "Само наличие повелительного глагола не доказывает поручение: не превращай "
+                  "гипотетическое обсуждение, цитату или передачу слова в задачу. "
+                  "Не придумывай исполнителя или срок ради заполнения поля: если подтверждения нет, "
+                  "оставь null и поясни неопределённость. Не исправляй спорное распознавание даты наугад.")
+        # Exactly one repair; unresolved fields still become null below.
+        raw = _local_json(repair, _ITEM_SCHEMA)
     valid_ids = {str(segment["id"]) for segment in segments}
     items = []
     for candidate in raw.get("items", []):
